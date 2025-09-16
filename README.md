@@ -1,59 +1,50 @@
-# SnasFrontend
+# Documentação do Sistema SNAS (Sistema de Notificação Assíncrona)
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 20.3.1.
+Este documento fornece uma visão geral de como o sistema funciona e como executá-lo localmente.
 
-## Development server
+## Arquitetura
 
-To start a local development server, run:
+O sistema é composto por duas partes principais:
 
-```bash
-ng serve
-```
+1.  **Frontend:** Uma aplicação Angular (`snas-frontend`) responsável pela interface do usuário, permitindo o envio de notificações e a visualização de seu status em tempo real.
+2.  **Backend:** Uma API em NestJS (`snas-backend` - presente neste repositório [https://github.com/Marcos934/snas-backend]) que recebe as notificações, as processa de forma assíncrona e fornece endpoints para consulta de status.
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+## Fluxo de Funcionamento
 
-## Code scaffolding
+1.  O usuário preenche o formulário no frontend e envia uma notificação.
+2.  O frontend envia uma requisição `POST` para a API backend.
+3.  A API backend recebe a requisição, a coloca em uma fila de processamento e retorna imediatamente um ID de mensagem com o status `RECEBIDO_PENDENTE`.
+4.  O frontend, ao receber o ID, inicia um processo de *polling*, consultando o endpoint de status da API a cada 3 segundos.
+5.  O backend processa a mensagem em background. Quando o processamento termina, o status da mensagem é atualizado para `PROCESSADO_SUCESSO` ou `FALHA_PROCESSAMENTO`.
+6.  Na próxima vez que o frontend consultar o status, ele receberá o status final e atualizará a interface do usuário, encerrando o polling para aquela mensagem.
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+## Como Executar o Frontend
 
-```bash
-ng generate component component-name
-```
+Para executar a aplicação frontend localmente, siga os passos abaixo.
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+### Pré-requisitos
 
-```bash
-ng generate --help
-```
+*   Node.js e npm instalados.
+*   Angular CLI instalado (`npm install -g @angular/cli`).
+*   O **servidor backend** deve estar em execução.
 
-## Building
+### Passos
 
-To build the project run:
+1.  **Instalar as dependências:**
+    Navegue até a pasta raiz do projeto `snas-frontend` e execute o comando:
+    ```bash
+    npm install
+    ```
 
-```bash
-ng build
-```
+2.  **Executar a aplicação:**
+    Após a instalação das dependências, execute o seguinte comando para iniciar o servidor de desenvolvimento do Angular:
+    ```bash
+    npm start
+    ```
+    ou
+    ```bash
+    ng serve
+    ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
-
-## Running unit tests
-
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+3.  **Acessar a aplicação:**
+    Abra seu navegador e acesse `http://localhost:4200/`. A aplicação estará disponível.
