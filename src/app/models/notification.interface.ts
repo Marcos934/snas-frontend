@@ -26,6 +26,7 @@ export interface ApiError {
 
 export type StatusType = 
   | 'NAO_ENCONTRADO'
+  | 'RECEBIDO_PENDENTE'  // Status inicial: 202 Recebido/Pendente
   | 'PROCESSADO_SUCESSO' 
   | 'FALHA_PROCESSAMENTO'
   | 'ERRO_PROCESSAMENTO';

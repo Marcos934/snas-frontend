@@ -1,14 +1,28 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { NotificationService } from '../services/notification.service';
-import { Notification } from '../models';
+import { Notification, NotificationStatus } from '../models';
 
+/**
+ * Interface para controle de estado das notificações na UI
+ */
 interface NotificationItem {
   notification: Notification;
   isPolling: boolean;
   error?: string;
 }
+
+/**
+ * Componente principal do Sistema de Notificações Assíncronas (SNAS)
+ * 
+ * Funcionalidades implementadas:
+ * - Envio de notificações via formulário
+ * - Polling automático individual por mensagem
+ * - Interceptor HTTP transparente para captura de endpoints
+ * - Atualização em tempo real da UI com Angular Signals
+ * - Controle de subscriptions para evitar memory leaks
+ */
 
 @Component({
   selector: 'app-notification-form',
@@ -35,7 +49,7 @@ interface NotificationItem {
           </div>
           <button 
             type="submit" 
-            [disabled]="!messageContent.trim() || isLoading()"
+            [disabled]="!messageContent().trim() || isLoading()"
             class="btn-primary">
             {{ isLoading() ? 'Enviando...' : 'Enviar Notificação' }}
           </button>
@@ -50,11 +64,11 @@ interface NotificationItem {
           <p class="empty-state">Nenhuma notificação enviada ainda.</p>
         }
         
-        @for (item of notifications(); track item.notification.id) {
+        @for (item of notifications().slice().reverse(); track item.notification.id) {
           <div class="notification-card" [class]="getStatusClass(item.notification.status)">
             <div class="notification-header">
               <span class="notification-id">{{ item.notification.id }}</span>
-              <span class="notification-status">{{ getStatusText(item.notification.status) }}</span>
+              <span class="notification-status" [class]="item.notification.status">{{ getStatusText(item.notification.status) }}</span>
             </div>
             
             <div class="notification-content">
@@ -152,7 +166,8 @@ interface NotificationItem {
       border-left: 4px solid #dc3545;
     }
 
-    .notification-card.NAO_ENCONTRADO {
+    .notification-card.NAO_ENCONTRADO,
+    .notification-card.RECEBIDO_PENDENTE {
       border-left: 4px solid #ffc107;
     }
 
@@ -175,6 +190,26 @@ interface NotificationItem {
       font-size: 11px;
       font-weight: 500;
       text-transform: uppercase;
+    }
+
+    .notification-status.PROCESSADO_SUCESSO {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .notification-status.FALHA_PROCESSAMENTO,
+    .notification-status.ERRO_PROCESSAMENTO {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .notification-status.NAO_ENCONTRADO,
+    .notification-status.RECEBIDO_PENDENTE {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
     }
 
     .notification-content {
@@ -203,76 +238,151 @@ interface NotificationItem {
       font-style: italic;
     }
   `]
-})
-export class NotificationFormComponent {
-  messageContent = '';
+})export class NotificationFormComponent implements OnDestroy {
+  // Estado reativo da aplicação usando Angular Signals
+  messageContent = signal('');
   notifications = signal<NotificationItem[]>([]);
-  isLoading = signal(false);
+  loading = signal(false);
 
   constructor(private notificationService: NotificationService) {}
 
+  /**
+   * Lifecycle hook - limpa todas as subscriptions ao destruir o componente
+   * Previne memory leaks parando todos os pollings ativos
+   */
+  ngOnDestroy(): void {
+    this.notificationService.stopAllPolling();
+  }
+
+  /**
+   * Verifica se há alguma operação em andamento
+   */
+  isLoading(): boolean {
+    return this.loading();
+  }
+
+  /**
+   * Envia uma nova notificação
+   * 
+   * Fluxo:
+   * 1. Cria objeto Notification com conteúdo do formulário
+   * 2. Envia via NotificationService
+   * 3. Adiciona à lista local para exibição imediata
+   * 4. Inicia polling automático (via interceptor HTTP)
+   * 5. Limpa formulário
+   */
   sendNotification(): void {
-    if (!this.messageContent.trim()) return;
+    const content = this.messageContent().trim();
+    if (!content) return;
 
-    this.isLoading.set(true);
-    const notification = new Notification(this.messageContent.trim());
-    
-    // Adiciona à lista
-    const item: NotificationItem = {
-      notification,
-      isPolling: false
-    };
-    
-    this.notifications.update(items => [item, ...items]);
+    this.loading.set(true);
+    const notification = new Notification(content);
 
-    // Envia para API
     this.notificationService.sendNotification(notification).subscribe({
       next: (response) => {
-        console.log('Notificação enviada:', response);
+        console.log('✅ Notificação enviada:', response);
+        
+        // Adiciona à lista local para exibição imediata
+        this.notifications.update(items => [...items, {
+          notification,
+          isPolling: true, // Será controlado pelo interceptor
+          error: undefined
+        }]);
+
+        // Limpa o formulário
+        this.messageContent.set('');
+        this.loading.set(false);
+
+        // Inicia polling manual (backup caso interceptor falhe)
         this.startPolling(notification.id);
-        this.messageContent = '';
-        this.isLoading.set(false);
       },
       error: (error) => {
-        console.error('Erro ao enviar:', error);
-        this.updateNotificationError(notification.id, 'Erro ao enviar notificação');
-        this.isLoading.set(false);
+        console.error('❌ Erro ao enviar notificação:', error);
+        this.loading.set(false);
       }
     });
   }
 
+  /**
+   * Inicia polling individual para uma mensagem específica
+   * 
+   * Características:
+   * - Controle independente por mensagem
+   * - Para automaticamente quando status != 'NAO_ENCONTRADO'
+   * - Registra subscription para controle de memory leak
+   * - Atualiza UI em tempo real
+   */
+
   private startPolling(messageId: string): void {
+    console.log('🚀 [COMPONENT] Iniciando polling para:', messageId);
     this.updateNotificationPolling(messageId, true);
     
-    this.notificationService.pollUntilComplete(messageId).subscribe({
+    // Usa o novo polling individual
+    const subscription = this.notificationService.startPollingForMessage(messageId).subscribe({
       next: (status) => {
+        console.log('📨 [COMPONENT] Status recebido do serviço:', messageId, status);
         this.updateNotificationStatus(messageId, status);
         
         // Para o polling se não estiver mais pendente
         if (status.status !== 'NAO_ENCONTRADO') {
+          console.log('🛑 [COMPONENT] Parando polling - status final:', status.status);
           this.updateNotificationPolling(messageId, false);
         }
       },
       error: (error) => {
-        console.error('Erro no polling:', error);
+        console.error('❌ [COMPONENT] Erro no polling:', error);
         this.updateNotificationError(messageId, 'Erro ao verificar status');
+        this.updateNotificationPolling(messageId, false);
+      },
+      complete: () => {
+        console.log('✅ [COMPONENT] Polling completado para:', messageId);
         this.updateNotificationPolling(messageId, false);
       }
     });
+
+    // Registra a subscription para controle individual
+    this.notificationService.registerPollingSubscription(messageId, subscription);
   }
 
-  private updateNotificationStatus(messageId: string, status: any): void {
-    this.notifications.update(items => 
-      items.map(item => {
+  /**
+   * Atualiza o status de uma notificação específica
+   * Utiliza Angular Signals para reatividade otimizada
+   */
+  private updateNotificationStatus(messageId: string, status: NotificationStatus): void {
+    console.log('🔄 [COMPONENT] Atualizando status para:', messageId, status);
+    console.log('🔄 [COMPONENT] Status recebido - tipo:', typeof status.status, 'valor:', status.status);
+    console.log('🔄 [COMPONENT] Status raw:', JSON.stringify(status.status));
+    console.log('🔄 [COMPONENT] Objeto status completo:', JSON.stringify(status));
+    
+    this.notifications.update(items => {
+      console.log('📋 [COMPONENT] Lista atual de notificações:', items.length);
+      
+      const updatedItems = items.map(item => {
         if (item.notification.id === messageId) {
+          console.log('✅ [COMPONENT] Encontrou notificação para atualizar:', messageId);
+          console.log('✅ [COMPONENT] Status anterior:', item.notification.status, '-> Novo:', status.status);
+          
+          // Verifica se o status realmente mudou
+          const statusChanged = item.notification.status !== status.status;
+          console.log('🔄 [COMPONENT] Status mudou?', statusChanged);
+          
           item.notification.updateStatus(status);
-          item.error = undefined;
+          item.error = undefined; // Limpa erros anteriores
+          
+          console.log('✅ [COMPONENT] Status atualizado na notificação:', item.notification.status);
         }
         return item;
-      })
-    );
+      });
+      
+      console.log('📋 [COMPONENT] Lista atualizada:', updatedItems.map(i => ({ id: i.notification.id, status: i.notification.status })));
+      return updatedItems;
+    });
   }
 
+  /**
+   * Controla o estado de polling de uma notificação
+   * Usado para mostrar indicador visual de "Verificando..."
+   */
   private updateNotificationPolling(messageId: string, isPolling: boolean): void {
     this.notifications.update(items => 
       items.map(item => {
@@ -284,6 +394,10 @@ export class NotificationFormComponent {
     );
   }
 
+  /**
+   * Registra erro em uma notificação específica
+   * Para o polling e exibe mensagem de erro na UI
+   */
   private updateNotificationError(messageId: string, error: string): void {
     this.notifications.update(items => 
       items.map(item => {
@@ -296,14 +410,22 @@ export class NotificationFormComponent {
     );
   }
 
+  /**
+   * Retorna classe CSS baseada no status da notificação
+   * Usado para colorir bordas dos cards de notificação
+   */
   getStatusClass(status: string): string {
     return status;
   }
 
+  /**
+   * Converte status técnico em texto amigável para o usuário
+   */
   getStatusText(status: string): string {
     const statusMap: Record<string, string> = {
       'NAO_ENCONTRADO': 'Pendente',
-      'PROCESSADO_SUCESSO': 'Sucesso',
+      'RECEBIDO_PENDENTE': '202 Recebido/Pendente',  // Novo status inicial
+      'PROCESSADO_SUCESSO': 'Sucesso', 
       'FALHA_PROCESSAMENTO': 'Falha',
       'ERRO_PROCESSAMENTO': 'Erro'
     };

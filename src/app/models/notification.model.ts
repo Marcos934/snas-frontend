@@ -12,7 +12,7 @@ export class Notification {
     this.id = id || uuidv4();
     this.content = content;
     this.createdAt = new Date();
-    this.status = 'NAO_ENCONTRADO';
+    this.status = 'RECEBIDO_PENDENTE'; // Status inicial: 202 Recebido/Pendente
     this.lastUpdated = new Date();
   }
 
@@ -43,6 +43,6 @@ export class Notification {
 
   // Verifica se ainda está pendente
   isPending(): boolean {
-    return this.status === 'NAO_ENCONTRADO';
+    return this.status === 'NAO_ENCONTRADO' || this.status === 'RECEBIDO_PENDENTE';
   }
 }
