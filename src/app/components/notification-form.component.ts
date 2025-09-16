@@ -280,7 +280,6 @@ interface NotificationItem {
 
     this.notificationService.sendNotification(notification).subscribe({
       next: (response) => {
-        console.log('✅ Notificação enviada:', response);
         
         // Adiciona à lista local para exibição imediata
         this.notifications.update(items => [...items, {
@@ -314,27 +313,22 @@ interface NotificationItem {
    */
 
   private startPolling(messageId: string): void {
-    console.log('🚀 [COMPONENT] Iniciando polling para:', messageId);
     this.updateNotificationState(messageId, { isPolling: true }); // Atualização unificada
 
     const subscription = this.notificationService.startPollingForMessage(messageId).subscribe({
       next: (status) => {
-        console.log('📨 [COMPONENT] Status recebido do serviço:', messageId, status);
         const isFinalStatus = status.status !== 'NAO_ENCONTRADO' && status.status !== 'RECEBIDO_PENDENTE';
 
         if (isFinalStatus) {
-          console.log('🛑 [COMPONENT] Parando polling - status final:', status.status);
         }
 
         // Atualização de estado atômica
         this.updateNotificationState(messageId, { status, isPolling: !isFinalStatus });
       },
       error: (error) => {
-        console.error('❌ [COMPONENT] Erro no polling:', error);
         this.updateNotificationState(messageId, { error: 'Erro ao verificar status.', isPolling: false });
       },
       complete: () => {
-        console.log('✅ [COMPONENT] Polling completado para:', messageId);
         this.updateNotificationState(messageId, { isPolling: false });
       }
     });
