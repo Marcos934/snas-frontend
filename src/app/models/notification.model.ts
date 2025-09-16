@@ -24,10 +24,20 @@ export class Notification {
     };
   }
 
-  // Atualiza status da notificação
-  updateStatus(status: NotificationStatus): void {
-    this.status = status.status;
-    this.lastUpdated = new Date();
+  // Atualiza status da notificação de forma imutável
+  updateStatus(status: NotificationStatus): Notification {
+    if (this.status === status.status) {
+        return this;
+    }
+
+    // Clona a instância atual para manter a imutabilidade
+    const newNotification = Object.assign(new Notification(this.content, this.id), this);
+
+    // Define o novo status e atualiza o timestamp
+    newNotification.status = status.status;
+    newNotification.lastUpdated = new Date();
+
+    return newNotification;
   }
 
   // Verifica se está processada com sucesso

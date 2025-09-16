@@ -1,4 +1,4 @@
-import { Component, signal, OnDestroy } from '@angular/core';
+import { Component, signal, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { NotificationService } from '../services/notification.service';
@@ -76,7 +76,7 @@ interface NotificationItem {
             </div>
             
             <div class="notification-meta">
-              <small>Criado: {{ item.notification.createdAt | date:'short' }}</small>
+              <small>Criado: {{ item.notification.createdAt }}</small>
               @if (item.isPolling) {
                 <small class="polling">🔄 Verificando...</small>
               }
@@ -244,7 +244,7 @@ interface NotificationItem {
   notifications = signal<NotificationItem[]>([]);
   loading = signal(false);
 
-  constructor(private notificationService: NotificationService) {}
+  constructor(private notificationService: NotificationService, private cdr: ChangeDetectorRef) {}
 
   /**
    * Lifecycle hook - limpa todas as subscriptions ao destruir o componente
@@ -315,99 +315,59 @@ interface NotificationItem {
 
   private startPolling(messageId: string): void {
     console.log('🚀 [COMPONENT] Iniciando polling para:', messageId);
-    this.updateNotificationPolling(messageId, true);
-    
-    // Usa o novo polling individual
+    this.updateNotificationState(messageId, { isPolling: true }); // Atualização unificada
+
     const subscription = this.notificationService.startPollingForMessage(messageId).subscribe({
       next: (status) => {
         console.log('📨 [COMPONENT] Status recebido do serviço:', messageId, status);
-        this.updateNotificationStatus(messageId, status);
-        
-        // Para o polling se não estiver mais pendente
-        if (status.status !== 'NAO_ENCONTRADO') {
+        const isFinalStatus = status.status !== 'NAO_ENCONTRADO' && status.status !== 'RECEBIDO_PENDENTE';
+
+        if (isFinalStatus) {
           console.log('🛑 [COMPONENT] Parando polling - status final:', status.status);
-          this.updateNotificationPolling(messageId, false);
         }
+
+        // Atualização de estado atômica
+        this.updateNotificationState(messageId, { status, isPolling: !isFinalStatus });
       },
       error: (error) => {
         console.error('❌ [COMPONENT] Erro no polling:', error);
-        this.updateNotificationError(messageId, 'Erro ao verificar status');
-        this.updateNotificationPolling(messageId, false);
+        this.updateNotificationState(messageId, { error: 'Erro ao verificar status.', isPolling: false });
       },
       complete: () => {
         console.log('✅ [COMPONENT] Polling completado para:', messageId);
-        this.updateNotificationPolling(messageId, false);
+        this.updateNotificationState(messageId, { isPolling: false });
       }
     });
 
-    // Registra a subscription para controle individual
     this.notificationService.registerPollingSubscription(messageId, subscription);
   }
 
   /**
-   * Atualiza o status de uma notificação específica
-   * Utiliza Angular Signals para reatividade otimizada
+   * Atualiza o estado de uma notificação de forma atômica e imutável.
+   * Centraliza todas as atualizações (status, polling, erro) para evitar race conditions.
    */
-  private updateNotificationStatus(messageId: string, status: NotificationStatus): void {
-    console.log('🔄 [COMPONENT] Atualizando status para:', messageId, status);
-    console.log('🔄 [COMPONENT] Status recebido - tipo:', typeof status.status, 'valor:', status.status);
-    console.log('🔄 [COMPONENT] Status raw:', JSON.stringify(status.status));
-    console.log('🔄 [COMPONENT] Objeto status completo:', JSON.stringify(status));
-    
-    this.notifications.update(items => {
-      console.log('📋 [COMPONENT] Lista atual de notificações:', items.length);
-      
-      const updatedItems = items.map(item => {
-        if (item.notification.id === messageId) {
-          console.log('✅ [COMPONENT] Encontrou notificação para atualizar:', messageId);
-          console.log('✅ [COMPONENT] Status anterior:', item.notification.status, '-> Novo:', status.status);
-          
-          // Verifica se o status realmente mudou
-          const statusChanged = item.notification.status !== status.status;
-          console.log('🔄 [COMPONENT] Status mudou?', statusChanged);
-          
-          item.notification.updateStatus(status);
-          item.error = undefined; // Limpa erros anteriores
-          
-          console.log('✅ [COMPONENT] Status atualizado na notificação:', item.notification.status);
-        }
-        return item;
-      });
-      
-      console.log('📋 [COMPONENT] Lista atualizada:', updatedItems.map(i => ({ id: i.notification.id, status: i.notification.status })));
-      return updatedItems;
-    });
-  }
-
-  /**
-   * Controla o estado de polling de uma notificação
-   * Usado para mostrar indicador visual de "Verificando..."
-   */
-  private updateNotificationPolling(messageId: string, isPolling: boolean): void {
-    this.notifications.update(items => 
+  private updateNotificationState(messageId: string, updates: { status?: NotificationStatus; isPolling?: boolean; error?: string }): void {
+    this.notifications.update(items =>
       items.map(item => {
         if (item.notification.id === messageId) {
-          item.isPolling = isPolling;
+          // Aplica a atualização de status de forma imutável, se fornecida
+          const newNotification = updates.status && item.notification.status !== updates.status.status
+            ? item.notification.updateStatus(updates.status)
+            : item.notification;
+
+          // Retorna um NOVO objeto item com todos os estados atualizados
+          return {
+            notification: newNotification,
+            isPolling: updates.isPolling !== undefined ? updates.isPolling : item.isPolling,
+            error: updates.error // Substitui ou limpa o erro
+          };
         }
         return item;
       })
     );
-  }
 
-  /**
-   * Registra erro em uma notificação específica
-   * Para o polling e exibe mensagem de erro na UI
-   */
-  private updateNotificationError(messageId: string, error: string): void {
-    this.notifications.update(items => 
-      items.map(item => {
-        if (item.notification.id === messageId) {
-          item.error = error;
-          item.isPolling = false;
-        }
-        return item;
-      })
-    );
+    // Força a detecção de mudanças como último recurso.
+    this.cdr.detectChanges();
   }
 
   /**
