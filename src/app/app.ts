@@ -1,12 +1,13 @@
-import { Component, signal } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { Component } from '@angular/core';
+import { NotificationFormComponent } from './components/notification-form.component';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet],
-  templateUrl: './app.html',
+  standalone: true,
+  imports: [NotificationFormComponent],
+  template: '<app-notification-form></app-notification-form>',
   styleUrl: './app.css'
 })
-export class App {
-  protected readonly title = signal('snas-frontend');
+export class AppComponent {
+  title = 'snas-frontend';
 }

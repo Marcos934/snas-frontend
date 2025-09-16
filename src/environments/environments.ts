@@ -20,7 +20,7 @@ export const environment = {
    * Intervalo de polling para consulta de status das notificações (em milissegundos)
    * Configurado para 3 segundos conforme especificação
    */
-  pollingMs: 3000,
+  pollingInterval: 3000,
 
   /**
    * Configurações específicas da aplicação
