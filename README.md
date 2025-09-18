@@ -49,7 +49,9 @@ Para executar a aplicação frontend localmente, siga os passos abaixo.
 3.  **Acessar a aplicação:**
     Abra seu navegador e acesse `http://localhost:4200/`. A aplicação estará disponível.
 
-4. # Executar apenas os testes do componente
+---
+
+# Executar Testes
    ```bash
     # Executar apenas os testes do componente
     ng test --watch=false --include="**/notification-form.component.spec.ts"
